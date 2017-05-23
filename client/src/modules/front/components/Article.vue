@@ -1,75 +1,97 @@
 <template>
   <div class="article">
-    <div class="article__loading" v-if='isLoading'>
+    <div class="article__loading" v-if="isLoading">
       <Loading :loadingMsg='loadingMsg'></Loading>
     </div>
     <Side :isInList='false' :category='category'></Side>
-    <div class="article__main">
-      <h1 class="article__title">{{post.title}}</h1>
-      <p class="article__time">{{post.createTime}}</p>
-      <div class="article__content markdown-body" v-html="compiledPost" ref="post">
+    <div class="article__main" v-if="!isLoading">
+      <h1 class="article__title">{{currentPost.title}}</h1>
+      <p class="article__time">{{currentPost.createTime}}</p>
+      <div class="article__content markdown-body" v-html="currentPostCompile" ref="post">
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import Loading from 'publicComponents/Loading.vue'
 import articleApi from 'api/article.js'
 import marked from 'lib/marked.js'
 import Side from './common/Side.vue'
-import Loading from 'publicComponents/Loading.vue'
+
+import {
+  mapGetters,
+  mapActions
+} from 'vuex'
+
 export default {
   name: 'article',
   computed: {},
   data() {
     return {
-      post: {},
-      compiledPost: '',
       category: [],
-      hash: '',
-      loadingMsg: '加载中...',
-      isLoading: true,
-      over: false
+      isLoading: false,
+      loadingMsg: '加载中...'
+    }
+  },
+  computed: {
+    ...mapGetters([
+      'currentPost',
+      'currentPostCompile'
+    ]),
+    compiledPost() {
+      return this.compiledMarkdown(this.$store.state.currentPost.content)
     }
   },
   components: {
     Side,
     Loading
   },
-  mounted() {
-    this.hash = window.location.hash
-    window.location.hash = '#'
+  beforeMount() {
+    // 如果想等说明数据已经拿到，就没必要进行再去取数据了
+    if(this.currentPost.id == this.$route.params.id) {
+      this.$nextTick(() => {
+        // 提取文章标签，生成目录
+        Array.from(this.$refs.post.querySelectorAll("h1,h2,h3,h4,h5,h6")).forEach((item, index) => {
+          item.id = item.localName + '-' + index;
+          this.category.push({
+            tagName: item.localName,
+            text: item.innerText,
+            href: '#' + item.localName + '-' + index
+          })
+        })
+      })
+      return;
+    }
+    this.isLoading = true;
+    this.getPost(this.$route.params.id).then(() => {
+      this.isLoading = false;
+      this.$nextTick(() => {
+        // 提取文章标签，生成目录
+        Array.from(this.$refs.post.querySelectorAll("h1,h2,h3,h4,h5,h6")).forEach((item, index) => {
+          item.id = item.localName + '-' + index;
+          this.category.push({
+            tagName: item.localName,
+            text: item.innerText,
+            href: '#' + item.localName + '-' + index
+          })
+        })
+      })
+    })
   },
-  created() {
-    // 组件创建完后获取数据，
-    // 此时 data 已经被 observed 了
-    this.fetchData()
+  preFetch(store) {
+    return store.dispatch('getPost',store.state.route.params.id)
+  },
+  mounted() {
+    //this.compiledPost = this.compiledMarkdown(this.currentPost.content)
+    //this.isLoading = false
   },
   methods: {
+    ...mapActions([
+      'getPost'
+    ]),
     compiledMarkdown(value) {
       return marked(value)
-    },
-    fetchData() {
-      articleApi.getArticle(this.$route.params.id)
-        .then(res => {
-          console.log(res)
-          this.post = res.data.article;
-          this.compiledPost = this.compiledMarkdown(this.post.content)
-            //this.getCurrentArticle(0);
-          this.$nextTick(() => {
-            // 提取文章标签，生成目录
-            Array.from(this.$refs.post.querySelectorAll("h1,h2,h3,h4,h5,h6")).forEach((item, index) => {
-              item.id = item.localName + '-' + index;
-              this.category.push({
-                tagName: item.localName,
-                text: item.innerText,
-                href: '#' + item.localName + '-' + index
-              })
-            })
-            window.location.hash = this.hash
-            this.isLoading = false
-          })
-        });
     }
   }
 }
@@ -82,7 +104,7 @@ export default {
 @import '../assets/stylus/_settings.styl'
 .article
   max-width 1000px
-  margin 80px auto 0 auto
+  margin 85px auto 0 auto
   padding 0 20px 0px 20px
   &__main
     margin-left 260px
@@ -105,6 +127,7 @@ export default {
 @media screen and (max-width: 850px) 
   .article
     position relative
+    margin-top 80px
     &__main
       margin-left 0
     &__loading
